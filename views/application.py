@@ -2,22 +2,20 @@ import os
 
 from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_cors import cross_origin
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from flask_login import login_user, logout_user, login_required, current_user
-from forms import LoginForm, RegisterForm
-from flask_security import roles_required
+from flask_jwt_extended import create_access_token, jwt_required
+from flask_login import logout_user, current_user
 from werkzeug.utils import secure_filename
 
 from app import app, db, login_manager
-from models import User, Course, Progress, FullProgress, Team, Role, UserRoles, TeamLeadOfTeam, MentorOfCourse, \
+from helpers import generate_hash, quick_sort, save_file
+from models import User, Course, FullProgress, Team, Role, UserRoles, TeamLeadOfTeam, MentorOfCourse, \
     TrainingCourses, Topic, Subtopic, SourceOfLearningTextContent, SourceOfLearningVideoContent
-from helpers import generate_hash, allowed_file, quick_sort, save_file
-from constants import ALLOWED_EXTENSIONS
 
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
 
 #
 # @app.route('/')
@@ -25,7 +23,7 @@ def load_user(user_id):
 #     form = LoginForm()
 #     return render_template('application/loginform/index.html', form=form)
 
-#---Samo---#
+# ---Samo---#
 @app.route('/login', methods=['GET', 'POST'])
 @cross_origin(supports_credentials=True)
 def login():
@@ -75,45 +73,318 @@ def get_mentor_courses(mentor_username):
         return jsonify({'mentor_courses': courses_data}), 200
     return jsonify({'error': 'An error occurred while fetching mentor courses'}), 500
 
-#---Samo---#
 
-@app.route('/get_students_by_courses', methods=['POST'])
-@jwt_required()
-def get_students_by_courses():
+# ---Samo---#
+
+# @app.route('/get_students_by_courses', methods=['POST'])
+# def get_students_by_courses():
+#     try:
+#         # Parse the JSON request data to get course_ids
+#         request_data = request.get_json()
+#         course_ids = request_data.get('course_ids', [])
+#
+#         # Query the database to fetch students for the specified course_ids
+#         students_data = []
+#         for course_id in course_ids:
+#             students = (
+#                 User.query
+#                 .join(Progress, Progress.user_id == User.id)
+#                 .filter(Progress.course_id == course_id)
+#                 .all()
+#             )
+#
+#             for student in students:
+#                 students_data.append({
+#                     'id': student.id,
+#                     'username': student.username,
+#                     'progress': student.progresses.filter_by(course_id=course_id).first().progress_value
+#                 })
+#
+#         response_data = {'students': students_data}
+#         return jsonify(response_data), 200
+#
+#     except Exception as e:
+#         return jsonify({'error': 'An error occurred while fetching students by courses'}), 500
+# TODO CHI ASHXATUM HLY VOR
+
+@app.route('/add_topic/<course>', methods=['POST'])
+def add_topic(course):
     if request.method == 'POST':
         data = request.json
-        ids_list = data.get('course_ids')
-        students_data = []  # Initialize an empty list to store student data
+        topic_name = data['topic']
+        course_obj = Course.query.filter_by(course_name=course).first()
 
-        for id in ids_list:
-            student_courses = (
-                db.session.query(User.id, User.username, Progress.progress_value)
-                .join(Progress, Progress.user_id == User.id)
-                .join(Course, Course.id == Progress.course_id)
-                .filter(Course.id == id)
-                .all()
+        if course_obj:
+            topic_count = Topic.query.filter_by(course_id=course_obj.id).count()
+
+            new_topic = Topic(
+                topic_name=topic_name,
+                course_id=course_obj.id,
+                topic_queue=topic_count + 1
             )
+            db.session.add(new_topic)
+            db.session.commit()
+            return jsonify({'message': 'Successfully added'}), 200
+    return jsonify({'error': 'An error occurred while adding the topic'}), 500
 
-            # Add data for each student to the students_data list
-            for student in student_courses:
-                student_data = {
-                    'id': student.id,
-                    'username': student.username,
-                    'progress': student.progress_value
+
+@app.route('/edit_topic/<course>/<topic_id>', methods=['PUT'])
+def edit_topic(course, topic_id):
+    data = request.json
+    if request.method == 'PUT':
+        courses = Course.query.filter_by(course_name=course).first()
+        course_topices = Topic.query.filter_by(course_id=courses.id, id=topic_id).first()
+        topic_new_name = data.get('new_name')
+        course_topices.topic_name = topic_new_name
+        db.session.commit()
+        return jsonify({'message': 'Topic edited successfully'}), 200
+    else:
+        jsonify(message='bad request'), 400
+
+    return jsonify(message='bad request'), 400
+
+
+@app.route('/delete_topic/<course>/<topic_id>', methods=['DELETE'])
+def delete_topic(course, topic_id):
+    if request.method == 'DELETE':
+        courses = Course.query.filter_by(course_name=course).first()
+        course_topics = Topic.query.filter_by(course_id=courses.id, id=topic_id).first()
+        if course_topics:
+            db.session.delete(course_topics)
+            db.session.commit()
+            return jsonify({'message': 'Topic deleted successfully'}), 200
+    return jsonify(message='bad request'), 400
+
+
+@app.route('/get_topic_by_cource/<course_name>', methods=['GET'])
+def get_topic_by_cource(course_name):
+    if request.method == 'GET':
+        course = Course.query.filter_by(course_name=course_name).first()
+        if course:
+            course_topics = Topic.query.filter_by(course_id=course.id).all()
+            topics = []
+
+            for topic in course_topics:
+                topic_data = {
+                    "id": topic.id,
+                    "topic": topic.topic_name,
+                    "queue": topic.topic_queue
                 }
-                students_data.append(student_data)
+                topics.append(topic_data)
 
-        # Create the response dictionary
-        response_data = {
-            'students': students_data
-        }
+            data = {
+                "course": course_name,
+                "topics": topics
+            }
+            return jsonify(data), 200
 
-        # Return the response in the desired format
-        return jsonify(response_data), 200
+        return jsonify({"message": "Course not found"}), 404
 
-    return jsonify({'error': 'An error occurred while fetching students by courses'}), 500
+    return jsonify({"message": "Bad request"}), 400
 
 
+@app.route('/add/video_to_topic/<course>', methods=['POST'])
+def add_video_to_topic(course):
+    if request.method == "POST":
+        data = request.json
+        video_path = data.get('video_path')
+        video_name = data.get('video_name')
+        course_object = Course.query.filter_by(course_name=course).first()
+
+        if course_object:
+            selected_topic = Topic.query.filter_by(course_id=course_object.id, id=data.get('topic_id')).first()
+
+            if selected_topic:
+                selected_subtopic = Subtopic.query.filter_by(topic_id=selected_topic.id).first()
+
+                if selected_subtopic:
+                    video_count = SourceOfLearningVideoContent.query.filter_by(topic_id=selected_topic.id).count()
+                    new_video_content = SourceOfLearningVideoContent(
+                        video_name=video_name,
+                        video_path=video_path,
+                        topic_id=selected_topic.id,
+                        subtopic_id=selected_subtopic.id,
+                        video_queue=video_count + 1
+                    )
+                    db.session.add(new_video_content)
+                    db.session.commit()
+                    return jsonify({'message': 'Video Successfully added '}), 200
+
+    return jsonify({'error': 'An error occurred while adding the video'}), 500
+
+
+
+
+
+
+
+@app.route('/add/content_to_topic/<course>', methods=['POST'])
+def add_content_to_topic(course):
+    if request.method == "POST":
+        data = request.json
+        source_content_header = data.get('source_content_header')
+        source_content_plain_text = data.get('source_content_plain_text')
+        course_object = Course.query.filter_by(course_name=course).first()
+
+        if course_object:
+            selected_topic = Topic.query.filter_by(course_id=course_object.id, id=data.get('topic_id')).first()
+
+            if selected_topic:
+                selected_subtopic = Subtopic.query.filter_by(topic_id=selected_topic.id).first()
+
+                if selected_subtopic:
+                    new_text_content = SourceOfLearningTextContent(
+                        source_content_header=source_content_header,
+                        source_content_plain_text=source_content_plain_text,
+                        topic_id=selected_topic.id,
+                        subtopic_id=selected_subtopic.id,
+                    )
+                    db.session.add(new_text_content)
+                    db.session.commit()
+                    return jsonify({'content_id': new_text_content.id}), 200
+
+    return jsonify({'error': 'An error occurred while adding the content'}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#--------SUBTOPIC--------#
+@app.route('/add_subtopic/<course>', methods=['POST'])
+def add_subtopic(course):
+    if request.method == 'POST':
+        data = request.json
+        subtopic_name = data.get('subtopic')
+        course_object = Course.query.filter_by(course_name=course).first()
+        if course_object:
+            selected_topic = Topic.query.filter_by(course_id=course_object.id, topic_name=data.get('topic')).first()
+            if selected_topic:
+                subtopic_count = Subtopic.query.filter_by(topic_id=selected_topic.id).count()
+                new_subtopic = Subtopic(
+                    subtopic_name=subtopic_name,
+                    topic_id=selected_topic.id,
+                    subtopic_queue=subtopic_count + 1
+                )
+                db.session.add(new_subtopic)
+                db.session.commit()
+                return jsonify({'message': 'Successfully added'}), 200
+    return jsonify({'error': 'An error occurred while adding the subtopic'}), 500
+
+
+
+
+@app.route('/delete_subtopic/<course>/<topic_id>/<subtopic_id>', methods=['DELETE'])
+def delete_subtopic(course, topic_id, subtopic_id):
+    if request.method == 'DELETE':
+        course_obj = Course.query.filter_by(course_name=course).first()
+        topic_obj = Topic.query.filter_by(course_id=course_obj.id, id=topic_id).first()
+        subtopic_obj = Subtopic.query.filter_by(topic_id=topic_obj.id, id=subtopic_id).first()
+
+        if subtopic_obj:
+            db.session.delete(subtopic_obj)
+            db.session.commit()
+            return jsonify({'message': 'Subtopic deleted successfully'}), 200
+    return jsonify(message='Bad request'), 400
+
+
+
+
+
+
+
+@app.route('/edit_subtopic/<course>/<topic_id>/<subtopic_id>', methods=['PUT'])
+def edit_subtopic(course, topic_id, subtopic_id):
+    data = request.json
+    if request.method == 'PUT':
+        course_obj = Course.query.filter_by(course_name=course).first()
+        topic_obj = Topic.query.filter_by(course_id=course_obj.id, id=topic_id).first()
+        subtopic_obj = Subtopic.query.filter_by(topic_id=topic_obj.id, id=subtopic_id).first()
+        subtopic_new_name = data.get('new_name')
+
+        if subtopic_obj:
+            subtopic_obj.subtopic_name = subtopic_new_name
+            db.session.commit()
+            return jsonify({'message': 'Subtopic edited successfully'}), 200
+        else:
+            return jsonify({'error': 'Subtopic not found'}), 404
+    else:
+        return jsonify({'error': 'Bad request'}), 400
+
+
+
+
+@app.route('/get_subtopic_by_topic/<topic_name>', methods=['GET'])
+def get_subtopic_by_topic(topic_name):
+    if request.method == 'GET':
+        topic = Topic.query.filter_by(topic_name=topic_name).first()
+        if topic:
+            subtopics = Subtopic.query.filter_by(topic_id=topic.id).all()
+            subtopic_list = []
+
+            for subtopic in subtopics:
+                subtopic_data = {
+                    "id": subtopic.id,
+                    "subtopic": subtopic.subtopic_name,
+                    "queue": subtopic.subtopic_queue
+                }
+                subtopic_list.append(subtopic_data)
+
+            data = {
+                "topic": topic_name,
+                "subtopics": subtopic_list
+            }
+            return jsonify(data), 200
+
+        return jsonify({"message": "Topic not found"}), 404
+
+    return jsonify({"message": "Bad request"}), 400
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# -----------------------------------------------#
 @app.route('/teamlead/dashboard/<username>')
 def teamlead_dashboard(username):
     users = User.query.all()  # TODO filter by student
