@@ -268,20 +268,22 @@ def admin_delete_team(id):
 
 
 
-@app.route('/admin/attach_to_team', methods=['POST'])
+@app.route('/admin/attach_user_to_team', methods=['POST'])
 @jwt_required()
 def attache_teamlead_course():
     data = request.json
     if request.method == 'POST':
         team_id = data.get('team_id')
-        teamlead_id = data.get('teamlead_id')
-        if teamlead_id and team_id:
-            attach_teamlead = TeamLeadOfTeam(user_id=teamlead_id, team_id=team_id)
-            db.session.add(attach_teamlead)
+        user_id = data.get('user_id')
+        if user_id and team_id:
+            attach_user = TeamLeadOfTeam(user_id=user_id, team_id=team_id)
+            db.session.add(attach_user)
             db.session.commit()
-            return jsonify({'message': 'Team Lead attached successfully'}), 200
+            return jsonify({'message': 'User attached successfully'}), 200
         else:
-            return jsonify(message='bad request'), 400
+            return jsonify({'message': 'user or Team does not exist'}), 405
+    return jsonify(message='bad request'), 400
+
 
 
 

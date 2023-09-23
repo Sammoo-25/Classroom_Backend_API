@@ -78,34 +78,10 @@ def get_mentor_courses(mentor_username):
 
 # @app.route('/get_students_by_courses', methods=['POST'])
 # def get_students_by_courses():
-#     try:
-#         # Parse the JSON request data to get course_ids
-#         request_data = request.get_json()
-#         course_ids = request_data.get('course_ids', [])
-#
-#         # Query the database to fetch students for the specified course_ids
-#         students_data = []
-#         for course_id in course_ids:
-#             students = (
-#                 User.query
-#                 .join(Progress, Progress.user_id == User.id)
-#                 .filter(Progress.course_id == course_id)
-#                 .all()
-#             )
-#
-#             for student in students:
-#                 students_data.append({
-#                     'id': student.id,
-#                     'username': student.username,
-#                     'progress': student.progresses.filter_by(course_id=course_id).first().progress_value
-#                 })
-#
-#         response_data = {'students': students_data}
-#         return jsonify(response_data), 200
-#
-#     except Exception as e:
-#         return jsonify({'error': 'An error occurred while fetching students by courses'}), 500
-# TODO CHI ASHXATUM HLY VOR
+#     data = request.json
+#     course_ids_list = data.get('course_ids')
+#     students_list = []
+
 
 @app.route('/add_topic/<course>', methods=['POST'])
 def add_topic(course):
@@ -195,10 +171,111 @@ def add_video_to_topic(course):
             selected_topic = Topic.query.filter_by(course_id=course_object.id, id=data.get('topic_id')).first()
 
             if selected_topic:
+                # selected_subtopic = Subtopic.query.filter_by(topic_id=selected_topic.id).first()
+
+                # if selected_subtopic:
+                video_count = SourceOfLearningVideoContent.query.filter_by(topic_id=selected_topic.id,
+                                                                           subtopic=None).count()
+                new_video_content = SourceOfLearningVideoContent(
+                    video_name=video_name,
+                    video_path=video_path,
+                    topic_id=selected_topic.id,
+                    # subtopic_id=selected_subtopic.id,
+                    video_queue=video_count + 1
+                )
+                db.session.add(new_video_content)
+                db.session.commit()
+                return jsonify({'message': 'Video Successfully added for topic'}), 200
+
+    return jsonify({'error': 'An error occurred while adding the video'}), 500
+
+
+@app.route('/add/content_to_topic/<course>', methods=['POST'])
+def add_content_to_topic(course):
+    if request.method == "POST":
+        data = request.json
+        source_content_header = data.get('source_content_header')
+        source_content_plain_text = data.get('source_content_plain_text')
+        course_object = Course.query.filter_by(course_name=course).first()
+
+        if course_object:
+            selected_topic = Topic.query.filter_by(course_id=course_object.id, id=data.get('topic_id')).first()
+
+            if selected_topic:
+                # selected_subtopic = Subtopic.query.filter_by(topic_id=selected_topic.id).first()
+
+                # if selected_subtopic:
+                new_text_content = SourceOfLearningTextContent(
+                    source_content_header=source_content_header,
+                    source_content_plain_text=source_content_plain_text,
+                    topic_id=selected_topic.id,
+                    # subtopic_id=selected_subtopic.id,
+                )
+                db.session.add(new_text_content)
+                db.session.commit()
+                return jsonify({'content_id': new_text_content.id}), 200
+
+    return jsonify({'error': 'An error occurred while adding the content'}), 500
+
+
+@app.route('/get_source_by_topic/<topic>', methods=['GET'])
+def get_source_by_topic(topic):
+    if request.method == 'GET':
+        topic_obj = Topic.query.filter_by(topic_name=topic).first()
+
+        if topic_obj:
+            response_data = {
+                "source": [],
+                "topic": topic_obj.topic_name
+
+            }
+
+            video_content_list = SourceOfLearningVideoContent.query.filter_by(topic_id=topic_obj.id,
+                                                                              subtopic_id=None).all()
+
+            text_content_list = SourceOfLearningTextContent.query.filter_by(topic_id=topic_obj.id,
+                                                                            subtopic_id=None).all()
+
+            for video_content in video_content_list:
+                video_data = {
+                    "id": video_content.id,
+                    "source_video_path": video_content.video_path,
+                    "video_name": video_content.video_name
+                }
+                response_data["source"].append(video_data)
+
+            for text_content in text_content_list:
+                text_data = {
+                    "id": text_content.id,
+                    "source_content_header": text_content.source_content_header,
+                    "source_content": text_content.source_content_plain_text,
+                }
+                response_data["source"].append(text_data)
+
+            return jsonify(response_data), 200
+
+    return jsonify({'message': 'Topic not found'}), 404
+
+
+@app.route('/add/video_to_subtopic/<course>', methods=['POST'])
+def add_video_to_subtopic(course):
+    if request.method == "POST":
+        data = request.json
+        video_path = data.get('video_path')
+        video_name = data.get('video_name')
+        course_object = Course.query.filter_by(course_name=course).first()
+
+        if course_object:
+            selected_topic = Topic.query.filter_by(course_id=course_object.id, id=data.get('topic_id')).first()
+
+            if selected_topic:
                 selected_subtopic = Subtopic.query.filter_by(topic_id=selected_topic.id).first()
 
                 if selected_subtopic:
-                    video_count = SourceOfLearningVideoContent.query.filter_by(topic_id=selected_topic.id).count()
+                    video_count = SourceOfLearningVideoContent.query.filter(
+                        SourceOfLearningVideoContent.topic_id == selected_topic.id,
+                        SourceOfLearningVideoContent.subtopic_id.isnot(None)
+                    ).count()
                     new_video_content = SourceOfLearningVideoContent(
                         video_name=video_name,
                         video_path=video_path,
@@ -213,13 +290,8 @@ def add_video_to_topic(course):
     return jsonify({'error': 'An error occurred while adding the video'}), 500
 
 
-
-
-
-
-
-@app.route('/add/content_to_topic/<course>', methods=['POST'])
-def add_content_to_topic(course):
+@app.route('/add/content_to_subtopic/<course>', methods=['POST'])
+def add_content_to_subtopic(course):
     if request.method == "POST":
         data = request.json
         source_content_header = data.get('source_content_header')
@@ -246,31 +318,43 @@ def add_content_to_topic(course):
     return jsonify({'error': 'An error occurred while adding the content'}), 500
 
 
+@app.route('/get_source_by_subtopic/<subtopic_name>', methods=['GET'])
+def get_source_by_subtopic(subtopic_name):
+    if request.method == 'GET':
+        subtopic_obj = Subtopic.query.filter_by(subtopic_name=subtopic_name).first()
+
+        if subtopic_obj:
+            response_data = {
+                "source": [],
+                "subtopic": subtopic_obj.subtopic_name
+            }
+            video_content_list = SourceOfLearningVideoContent.query.filter_by(subtopic_id=subtopic_obj.id).all()
+
+            text_content_list = SourceOfLearningTextContent.query.filter_by(subtopic_id=subtopic_obj.id).all()
+
+            for subtopic_video_content in video_content_list:
+                video_data = {
+                    "id": subtopic_video_content.id,
+                    "source_video_path": subtopic_video_content.video_path,
+                    "video_name": subtopic_video_content.video_name
+                }
+                response_data["source"].append(video_data)
+
+            for subtopic_text_content in text_content_list:
+                text_data = {
+                    "id": subtopic_text_content.id,
+                    "source_content_header": subtopic_text_content.source_content_header,
+                    "source_content": subtopic_text_content.source_content_plain_text,
+                }
+                response_data["source"].append(text_data)
+
+            return jsonify(response_data), 200
 
 
+    return jsonify({'message': 'Topic not found'}), 404
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#--------SUBTOPIC--------#
+# --------SUBTOPIC--------#
 @app.route('/add_subtopic/<course>', methods=['POST'])
 def add_subtopic(course):
     if request.method == 'POST':
@@ -292,8 +376,6 @@ def add_subtopic(course):
     return jsonify({'error': 'An error occurred while adding the subtopic'}), 500
 
 
-
-
 @app.route('/delete_subtopic/<course>/<topic_id>/<subtopic_id>', methods=['DELETE'])
 def delete_subtopic(course, topic_id, subtopic_id):
     if request.method == 'DELETE':
@@ -306,11 +388,6 @@ def delete_subtopic(course, topic_id, subtopic_id):
             db.session.commit()
             return jsonify({'message': 'Subtopic deleted successfully'}), 200
     return jsonify(message='Bad request'), 400
-
-
-
-
-
 
 
 @app.route('/edit_subtopic/<course>/<topic_id>/<subtopic_id>', methods=['PUT'])
@@ -330,8 +407,6 @@ def edit_subtopic(course, topic_id, subtopic_id):
             return jsonify({'error': 'Subtopic not found'}), 404
     else:
         return jsonify({'error': 'Bad request'}), 400
-
-
 
 
 @app.route('/get_subtopic_by_topic/<topic_name>', methods=['GET'])
@@ -359,29 +434,6 @@ def get_subtopic_by_topic(topic_name):
         return jsonify({"message": "Topic not found"}), 404
 
     return jsonify({"message": "Bad request"}), 400
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # -----------------------------------------------#
